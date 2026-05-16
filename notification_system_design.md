@@ -266,9 +266,9 @@ Cache the notifications in the browser's `localStorage` or `sessionStorage`.
 ```python
 function notify_all(student_ids: array, message: string):
     for student_id in student_ids:
-        send_email(student_id, message)
-        save_to_db(student_id, message)
-        push_to_app(student_id, message)
+        send_email(student_id, message)  # calls Email API
+        save_to_db(student_id, message)  # DB insert
+        push_to_app(student_id, message) # real-time notification
 ```
 
 1. **Synchronous and Blocking:** The loop processes one student at a time. If `send_email` takes 1 second, notifying 50,000 students takes ~14 hours.
@@ -288,27 +288,34 @@ We must decouple the processes using an **Asynchronous Message Queue** (e.g., Ra
 ### Revised Pseudocode
 
 ```python
+# 1. Main API Handler (Fast, synchronous)
 function notify_all_handler(student_ids: array, message: string):
+    # Bulk insert into DB first (Source of Truth)
+    # Status defaults to 'pending_email'
     notification_ids = bulk_save_to_db(student_ids, message) 
     
+    # Push jobs to a Message Queue for asynchronous processing
     for id, student_id in zip(notification_ids, student_ids):
         queue.push("email_queue", { "notification_id": id, "student_id": student_id, "message": message })
         queue.push("realtime_queue", { "student_id": student_id, "message": message })
         
     return "Notifications queued successfully"
 
+# 2. Email Worker (Runs asynchronously, multiple instances in parallel)
 function process_email_job(job):
     try:
         send_email(job.student_id, job.message)
         update_db_status(job.notification_id, 'email_sent')
     except TransientError:
+        # Put back in queue with exponential backoff
         queue.retry(job, delay=exponential_backoff)
     except PermanentError:
         update_db_status(job.notification_id, 'email_failed')
         log_error("Email failed permanently", job)
 
+# 3. Real-time Worker (Runs asynchronously)
 function process_realtime_job(job):
-    push_to_app(job.student_id, job.message)
+    push_to_app(job.student_id, job.message) # e.g., via Redis Pub/Sub to SSE servers
 ```
 
 **Why this is better:**
@@ -316,3 +323,96 @@ function process_realtime_job(job):
 - **Reliable:** If an email fails, the worker retries it without affecting others.
 - **Scalable:** We can spin up 100 email workers to process the queue in minutes instead of hours.
 - **Resilient:** If the worker crashes, the message remains in the queue and is picked up by another worker.
+
+---
+
+## Stage 6: Priority Inbox Implementation
+
+### Approach
+
+The Priority Inbox displays the top 'n' most important unread notifications to the user. Priority is determined by a **weighted scoring formula** that combines notification type importance with recency.
+
+### Scoring Formula
+
+```
+priority_score = type_weight + recency_score
+```
+
+Where:
+- **type_weight:** Placement = 3, Result = 2, Event = 1 (Placement > Result > Event)
+- **recency_score:** `1 / (1 + hours_since_creation / 24)` — ranges from 0.0 (very old) to 1.0 (just created)
+
+This formula ensures that:
+1. A Placement notification always ranks higher than a Result or Event of the same age.
+2. Within the same type, more recent notifications rank higher.
+3. A very recent Result (score ~3.0) can outrank an old Placement (score ~3.0) — creating a natural balance between urgency and importance.
+
+### Implementation Strategy
+
+The implementation uses a **Min-Heap (Priority Queue)** of size `n` to efficiently maintain the top 10 notifications:
+
+```python
+import heapq
+
+def get_top_n_priority(notifications, n=10):
+    heap = []
+    for notification in notifications:
+        score = calculate_priority(notification)
+        if len(heap) < n:
+            heapq.heappush(heap, (score, notification))
+        elif score > heap[0][0]:
+            heapq.heapreplace(heap, (score, notification))
+    return sorted(heap, key=lambda x: -x[0])
+```
+
+**Time Complexity:** O(N log n) where N = total notifications, n = top-n size (10)
+**Space Complexity:** O(n) — only stores the top 10 at any time
+
+### How to Maintain Top 10 Efficiently with New Notifications Coming In
+
+When new notifications arrive continuously, we need an efficient strategy to maintain the top 10 without re-scanning the entire dataset every time.
+
+#### Strategy: Streaming Min-Heap with Threshold Check
+
+1. **Maintain a persistent Min-Heap** of size 10 in memory (or Redis for distributed systems).
+2. **When a new notification arrives:**
+   - Calculate its priority score.
+   - Compare it with the **minimum score in the heap** (the root of the min-heap, accessible in O(1)).
+   - If the new score > minimum score in heap → replace the root with the new notification (O(log n) operation).
+   - If the new score <= minimum score → discard it (O(1) operation).
+3. **Recency decay handling:**
+   - Since recency scores decay over time, run a periodic background job (e.g., every 5 minutes) that recalculates scores for the current top 10 and checks if any notification in the broader pool should now replace a decayed entry.
+   - Alternatively, use a **lazy evaluation** approach: recalculate scores only when the user opens their inbox (on-demand).
+
+#### Why This is Efficient:
+
+| Operation | Complexity | Explanation |
+|-----------|-----------|-------------|
+| Insert new notification | O(log 10) = O(1) | Heap operations on fixed-size heap |
+| Check if new notification qualifies | O(1) | Compare with heap root |
+| Get current top 10 | O(10 log 10) = O(1) | Extract and sort the small heap |
+| Full recalculation (periodic) | O(N log 10) | Only needed for recency decay |
+
+#### Alternative: Redis Sorted Set (Production-Grade)
+
+For a production system with multiple server instances:
+
+```python
+# On new notification arrival:
+redis.zadd("priority_inbox:user_123", {notification_id: priority_score})
+redis.zremrangebyrank("priority_inbox:user_123", 0, -(n+1))  # Keep only top n
+
+# To fetch top 10:
+top_10 = redis.zrevrange("priority_inbox:user_123", 0, 9, withscores=True)
+```
+
+This provides O(log N) insertion and O(n) retrieval, with built-in persistence and distribution across server instances.
+
+### Code Reference
+
+The full working implementation is located at `notification_app_be/priority_inbox.py`. It:
+1. Authenticates with the evaluation service API
+2. Fetches live notification data
+3. Applies the weighted priority scoring formula
+4. Uses a min-heap to extract the top 10
+5. Outputs the result as structured JSON
