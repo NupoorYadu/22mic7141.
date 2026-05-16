@@ -22,40 +22,30 @@ import requests
 import heapq
 from datetime import datetime
 
-# Set environment variables before importing logging middleware
-os.environ.setdefault("CLIENT_ID", "d3caf95c-01be-478b-aaa4-58ddef5cd6b2")
-os.environ.setdefault("CLIENT_SECRET", "bRheXPQCcKXKrFXr")
-os.environ.setdefault("EMAIL", "your_college_email@college.edu")
-os.environ.setdefault("NAME", "your full name")
-os.environ.setdefault("ROLL_NO", "22mic7179")
+os.environ.setdefault("CLIENT_ID", "680332e6-3a09-4d72-806e-7d505b12d2a8")
+os.environ.setdefault("CLIENT_SECRET", "dZYRjtrcaYWvdNnz")
+os.environ.setdefault("EMAIL", "nupooryaduvanshi@gmail.com")
+os.environ.setdefault("NAME", "nupoor kumari")
+os.environ.setdefault("ROLL_NO", "22mic7141")
 os.environ.setdefault("ACCESS_CODE", "SfFuWg")
 
-# Add parent directory to path for importing logging middleware
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from logging_middleware.logger import Log
 
-# ============================================================
-# Configuration
-# ============================================================
 
 BASE_URL = "http://4.224.186.213/evaluation-service"
 NOTIFICATIONS_URL = f"{BASE_URL}/notifications"
 AUTH_URL = f"{BASE_URL}/auth"
 
-# Type weights for priority calculation
 TYPE_WEIGHTS = {
     "Placement": 3,
     "Result": 2,
     "Event": 1
 }
 
-# Number of top priority notifications to display
 TOP_N = 10
 
 
-# ============================================================
-# Authentication
-# ============================================================
 
 def get_auth_token() -> str:
     """Fetches a Bearer token from the authentication endpoint."""
@@ -81,9 +71,6 @@ def get_auth_token() -> str:
         raise
 
 
-# ============================================================
-# Data Fetching
-# ============================================================
 
 def fetch_notifications(token: str) -> list:
     """Fetches all notifications from the evaluation service API."""
@@ -106,9 +93,6 @@ def fetch_notifications(token: str) -> list:
         raise
 
 
-# ============================================================
-# Priority Calculation
-# ============================================================
 
 def calculate_recency_score(timestamp_str: str, reference_time: datetime) -> float:
     """
@@ -121,14 +105,11 @@ def calculate_recency_score(timestamp_str: str, reference_time: datetime) -> flo
     try:
         notification_time = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
     except ValueError:
-        # Try ISO format as fallback
         notification_time = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00")).replace(tzinfo=None)
 
     time_diff = reference_time - notification_time
     hours_diff = max(time_diff.total_seconds() / 3600, 0)
 
-    # Inverse decay: notifications from the last hour score ~1.0,
-    # notifications from 24 hours ago score ~0.5
     recency_score = 1.0 / (1.0 + hours_diff / 24.0)
     return recency_score
 
@@ -147,9 +128,6 @@ def calculate_priority(notification: dict, reference_time: datetime) -> float:
     return type_weight + recency_score
 
 
-# ============================================================
-# Priority Inbox (Top-N using Min-Heap)
-# ============================================================
 
 def get_top_n_priority_notifications(notifications: list, n: int = TOP_N) -> list:
     """
@@ -182,7 +160,6 @@ def get_top_n_priority_notifications(notifications: list, n: int = TOP_N) -> lis
         elif priority > min_heap[0][0]:
             heapq.heapreplace(min_heap, (priority, notification.get("ID", ""), notification))
 
-    # Extract results sorted by priority (highest first)
     top_notifications = sorted(min_heap, key=lambda x: x[0], reverse=True)
 
     Log("backend", "info", "service", f"Top {n} priorities determined")
@@ -190,9 +167,6 @@ def get_top_n_priority_notifications(notifications: list, n: int = TOP_N) -> lis
     return [(score, notif) for score, _, notif in top_notifications]
 
 
-# ============================================================
-# Display (JSON Output)
-# ============================================================
 
 def display_results(top_notifications: list):
     """Displays the top priority notifications in JSON format."""
@@ -218,18 +192,13 @@ def display_results(top_notifications: list):
     print(json.dumps(output, indent=2))
 
 
-# ============================================================
-# Main Entry Point
-# ============================================================
 
 def main():
     """Main function to run the Priority Inbox."""
     Log("backend", "info", "controller", "Starting Priority Inbox")
 
-    # Step 1: Authenticate
     token = get_auth_token()
 
-    # Step 2: Fetch notifications
     notifications = fetch_notifications(token)
 
     if not notifications:
@@ -237,10 +206,8 @@ def main():
         print(json.dumps({"error": "No notifications available"}))
         return
 
-    # Step 3: Calculate priorities and get top N
     top_notifications = get_top_n_priority_notifications(notifications, TOP_N)
 
-    # Step 4: Display results in JSON format
     display_results(top_notifications)
 
     Log("backend", "info", "controller", "Priority Inbox completed")

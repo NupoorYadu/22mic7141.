@@ -3,7 +3,7 @@
 ## Project Structure
 
 ```
-22mic7179/
+22mic7141/
 ├── logging_middleware/              # Custom logging middleware package
 │   ├── __init__.py
 │   └── logger.py

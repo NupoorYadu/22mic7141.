@@ -3,7 +3,6 @@ import requests
 import json
 import os
 
-# Environment variables are read at call time to allow late binding
 
 AUTH_URL = "http://4.224.186.213/evaluation-service/auth"
 LOG_URL = "http://4.224.186.213/evaluation-service/logs"
@@ -27,7 +26,6 @@ def get_auth_token():
         print(f"Error fetching auth token: {e}")
         return None
 
-# Global variable to store the token and avoid refetching for every log
 AUTH_TOKEN = None
 
 def Log(stack: str, level: str, package: str, message: str):
@@ -61,11 +59,10 @@ def Log(stack: str, level: str, package: str, message: str):
     try:
         response = requests.post(LOG_URL, headers=headers, json=payload)
         if response.status_code in [200, 201]:
-            return  # Log successful
+            return
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         print(f"Error sending log: {e}")
-        # If token expires or becomes invalid, try to refresh it once
         if hasattr(response, 'status_code') and response.status_code in [401, 403]:
             print("Auth token might be expired or invalid. Attempting to refresh...")
             AUTH_TOKEN = get_auth_token()
@@ -74,7 +71,6 @@ def Log(stack: str, level: str, package: str, message: str):
                 try:
                     response = requests.post(LOG_URL, headers=headers, json=payload)
                     response.raise_for_status()
-                    # print(f"Log successful after refresh: {response.json()}")
                 except requests.exceptions.RequestException as e_retry:
                     print(f"Error sending log after refresh: {e_retry}")
             else:
@@ -82,14 +78,5 @@ def Log(stack: str, level: str, package: str, message: str):
 
 
 if __name__ == "__main__":
-    # Example usage (for testing purposes)
-    # Set environment variables before running this directly
-    # export CLIENT_ID="your_client_id"
-    # export CLIENT_SECRET="your_client_secret"
-    # export EMAIL="your_email"
-    # export NAME="your_name"
-    # export ROLL_NO="your_roll_no"
-    # export ACCESS_CODE="your_access_code"
 
-    # Log("backend", "info", "middleware", "Test log message from main")
     pass

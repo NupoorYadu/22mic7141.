@@ -24,21 +24,16 @@ import sys
 import json
 import requests
 
-# Set environment variables before importing logging middleware
-os.environ.setdefault("CLIENT_ID", "d3caf95c-01be-478b-aaa4-58ddef5cd6b2")
-os.environ.setdefault("CLIENT_SECRET", "bRheXPQCcKXKrFXr")
-os.environ.setdefault("EMAIL", "your_college_email@college.edu")
-os.environ.setdefault("NAME", "your full name")
-os.environ.setdefault("ROLL_NO", "22mic7179")
+os.environ.setdefault("CLIENT_ID", "680332e6-3a09-4d72-806e-7d505b12d2a8")
+os.environ.setdefault("CLIENT_SECRET", "dZYRjtrcaYWvdNnz")
+os.environ.setdefault("EMAIL", "nupooryaduvanshi@gmail.com")
+os.environ.setdefault("NAME", "nupoor kumari")
+os.environ.setdefault("ROLL_NO", "22mic7141")
 os.environ.setdefault("ACCESS_CODE", "SfFuWg")
 
-# Add parent directory to path for importing logging middleware
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from logging_middleware.logger import Log
 
-# ============================================================
-# Configuration
-# ============================================================
 
 BASE_URL = "http://4.224.186.213/evaluation-service"
 AUTH_URL = f"{BASE_URL}/auth"
@@ -46,9 +41,6 @@ DEPOTS_URL = f"{BASE_URL}/depots"
 VEHICLES_URL = f"{BASE_URL}/vehicles"
 
 
-# ============================================================
-# Authentication
-# ============================================================
 
 def get_auth_token() -> str:
     """Fetches a Bearer token from the authentication endpoint."""
@@ -74,9 +66,6 @@ def get_auth_token() -> str:
         raise
 
 
-# ============================================================
-# Data Fetching
-# ============================================================
 
 def fetch_depots(token: str) -> list:
     """Fetches all depots from the evaluation service API."""
@@ -114,9 +103,6 @@ def fetch_vehicles(token: str) -> list:
         raise
 
 
-# ============================================================
-# 0/1 Knapsack Algorithm (Dynamic Programming)
-# ============================================================
 
 def knapsack_01(capacity: int, tasks: list) -> dict:
     """
@@ -135,23 +121,18 @@ def knapsack_01(capacity: int, tasks: list) -> dict:
     """
     n = len(tasks)
 
-    # dp[i][w] = maximum importance using first i items with capacity w
     dp = [[0] * (capacity + 1) for _ in range(n + 1)]
 
-    # Fill the DP table
     for i in range(1, n + 1):
         duration = tasks[i - 1]["Duration"]
         impact = tasks[i - 1]["Impact"]
 
         for w in range(capacity + 1):
-            # Don't take item i
             dp[i][w] = dp[i - 1][w]
 
-            # Take item i (if it fits)
             if duration <= w:
                 dp[i][w] = max(dp[i][w], dp[i - 1][w - duration] + impact)
 
-    # Backtrack to find which tasks were selected
     selected_tasks = []
     w = capacity
     for i in range(n, 0, -1):
@@ -171,18 +152,13 @@ def knapsack_01(capacity: int, tasks: list) -> dict:
     }
 
 
-# ============================================================
-# Main Entry Point
-# ============================================================
 
 def main():
     """Main function to run the Vehicle Maintenance Scheduler."""
     Log("backend", "info", "controller", "Starting Vehicle Scheduler")
 
-    # Step 1: Authenticate
     token = get_auth_token()
 
-    # Step 2: Fetch data
     depots = fetch_depots(token)
     vehicles = fetch_vehicles(token)
 
@@ -196,7 +172,6 @@ def main():
         print(json.dumps({"error": "No vehicle tasks available"}))
         return
 
-    # Step 3: Solve knapsack for each depot and build JSON output
     output = {
         "vehicle_maintenance_schedule": {
             "algorithm": "0/1 Knapsack (Dynamic Programming)",
@@ -243,7 +218,6 @@ def main():
 
     output["vehicle_maintenance_schedule"]["grand_total_importance"] = total_importance
 
-    # Output as formatted JSON
     print(json.dumps(output, indent=2))
 
     Log("backend", "info", "controller", "Vehicle Scheduler completed")

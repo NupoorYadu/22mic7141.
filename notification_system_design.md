@@ -266,9 +266,9 @@ Cache the notifications in the browser's `localStorage` or `sessionStorage`.
 ```python
 function notify_all(student_ids: array, message: string):
     for student_id in student_ids:
-        send_email(student_id, message)  # calls Email API
-        save_to_db(student_id, message)  # DB insert
-        push_to_app(student_id, message) # real-time notification
+        send_email(student_id, message)
+        save_to_db(student_id, message)
+        push_to_app(student_id, message)
 ```
 
 1. **Synchronous and Blocking:** The loop processes one student at a time. If `send_email` takes 1 second, notifying 50,000 students takes ~14 hours.
@@ -288,34 +288,27 @@ We must decouple the processes using an **Asynchronous Message Queue** (e.g., Ra
 ### Revised Pseudocode
 
 ```python
-# 1. Main API Handler (Fast, synchronous)
 function notify_all_handler(student_ids: array, message: string):
-    # Bulk insert into DB first (Source of Truth)
-    # Status defaults to 'pending_email'
     notification_ids = bulk_save_to_db(student_ids, message) 
     
-    # Push jobs to a Message Queue for asynchronous processing
     for id, student_id in zip(notification_ids, student_ids):
         queue.push("email_queue", { "notification_id": id, "student_id": student_id, "message": message })
         queue.push("realtime_queue", { "student_id": student_id, "message": message })
         
     return "Notifications queued successfully"
 
-# 2. Email Worker (Runs asynchronously, multiple instances in parallel)
 function process_email_job(job):
     try:
         send_email(job.student_id, job.message)
         update_db_status(job.notification_id, 'email_sent')
     except TransientError:
-        # Put back in queue with exponential backoff
         queue.retry(job, delay=exponential_backoff)
     except PermanentError:
         update_db_status(job.notification_id, 'email_failed')
         log_error("Email failed permanently", job)
 
-# 3. Real-time Worker (Runs asynchronously)
 function process_realtime_job(job):
-    push_to_app(job.student_id, job.message) # e.g., via Redis Pub/Sub to SSE servers
+    push_to_app(job.student_id, job.message)
 ```
 
 **Why this is better:**
